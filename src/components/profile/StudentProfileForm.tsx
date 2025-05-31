@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,8 +16,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import type { StudentUser } from "@/lib/types";
-import { Save } from "lucide-react";
+import type { StudentUser, User } from "@/lib/types";
+import { Save, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 
 const studentProfileSchema = z.object({
   name: z.string().min(2, { message: "Le nom doit contenir au moins 2 caractères." }),
@@ -24,16 +26,20 @@ const studentProfileSchema = z.object({
   program: z.string().min(1, { message: "Veuillez indiquer votre filière." }),
   level: z.string().min(1, { message: "Veuillez indiquer votre niveau." }),
   difficultSubjects: z.string().optional(), // Comma-separated string
+  avatarUrl: z.string().url({ message: "Veuillez entrer une URL valide pour l'avatar." }).optional().or(z.literal('')),
 });
 
 type StudentProfileFormValues = z.infer<typeof studentProfileSchema>;
 
 interface StudentProfileFormProps {
-  student: StudentUser; // Initial data
+  student: StudentUser;
+  onProfileUpdate: (updatedUser: User) => void;
 }
 
-export default function StudentProfileForm({ student }: StudentProfileFormProps) {
+export default function StudentProfileForm({ student, onProfileUpdate }: StudentProfileFormProps) {
   const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+
   const form = useForm<StudentProfileFormValues>({
     resolver: zodResolver(studentProfileSchema),
     defaultValues: {
@@ -42,24 +48,59 @@ export default function StudentProfileForm({ student }: StudentProfileFormProps)
       program: student.program || "",
       level: student.level || "",
       difficultSubjects: student.difficultSubjects?.join(", ") || "",
+      avatarUrl: student.avatarUrl || "",
     },
   });
+  
+  useEffect(() => {
+    form.reset({
+      name: student.name || "",
+      email: student.email || "",
+      program: student.program || "",
+      level: student.level || "",
+      difficultSubjects: student.difficultSubjects?.join(", ") || "",
+      avatarUrl: student.avatarUrl || "",
+    });
+  }, [student, form]);
+
 
   async function onSubmit(values: StudentProfileFormValues) {
-    // Simulate API call to update profile
-    console.log("Updating student profile:", { ...values, id: student.id });
-    // Split difficultSubjects back into an array
-    const updatedProfile = {
-      ...student,
-      ...values,
-      difficultSubjects: values.difficultSubjects?.split(',').map(s => s.trim()).filter(s => s) || [],
-    };
-    console.log("Updated student data (mock):", updatedProfile);
-    
-    toast({
-      title: "Profil mis à jour",
-      description: "Vos informations ont été enregistrées avec succès.",
-    });
+    setIsLoading(true);
+    try {
+      const difficultSubjectsArray = values.difficultSubjects?.split(',').map(s => s.trim()).filter(s => s) || [];
+      const payload = {
+        ...values,
+        difficultSubjects: difficultSubjectsArray,
+        role: 'student', // Ensure role is passed for backend logic if needed
+      };
+
+      const response = await fetch(`/api/profile/${student.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const updatedUserData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(updatedUserData.message || "Erreur lors de la mise à jour du profil.");
+      }
+      
+      onProfileUpdate(updatedUserData as User); // Update AuthContext
+      toast({
+        title: "Profil mis à jour",
+        description: "Vos informations ont été enregistrées avec succès.",
+      });
+
+    } catch (error) {
+      toast({
+        title: "Erreur de mise à jour",
+        description: (error as Error).message || "Une erreur s'est produite.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -72,7 +113,7 @@ export default function StudentProfileForm({ student }: StudentProfileFormProps)
             <FormItem>
               <FormLabel>Nom complet</FormLabel>
               <FormControl>
-                <Input placeholder="Votre nom et prénom" {...field} />
+                <Input placeholder="Votre nom et prénom" {...field} disabled={isLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -91,6 +132,19 @@ export default function StudentProfileForm({ student }: StudentProfileFormProps)
             </FormItem>
           )}
         />
+         <FormField
+          control={form.control}
+          name="avatarUrl"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>URL de l'avatar (optionnel)</FormLabel>
+              <FormControl>
+                <Input placeholder="https://exemple.com/avatar.png" {...field} disabled={isLoading} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="program"
@@ -98,7 +152,7 @@ export default function StudentProfileForm({ student }: StudentProfileFormProps)
             <FormItem>
               <FormLabel>Filière</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: Génie Informatique" {...field} />
+                <Input placeholder="Ex: Génie Informatique" {...field} disabled={isLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -111,7 +165,7 @@ export default function StudentProfileForm({ student }: StudentProfileFormProps)
             <FormItem>
               <FormLabel>Niveau d'études</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: 3ème année, Master 1" {...field} />
+                <Input placeholder="Ex: 3ème année, Master 1" {...field} disabled={isLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -124,15 +178,15 @@ export default function StudentProfileForm({ student }: StudentProfileFormProps)
             <FormItem>
               <FormLabel>Matières en difficulté (séparées par une virgule)</FormLabel>
               <FormControl>
-                <Textarea placeholder="Ex: Algorithmique, Mathématiques discrètes" {...field} />
+                <Textarea placeholder="Ex: Algorithmique, Mathématiques discrètes" {...field} disabled={isLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit">
-          <Save className="mr-2 h-4 w-4" />
-          Enregistrer les modifications
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          {isLoading ? "Enregistrement..." : "Enregistrer les modifications"}
         </Button>
       </form>
     </Form>

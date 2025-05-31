@@ -1,3 +1,4 @@
+
 "use client";
 
 import AppLayout from '@/components/layout/AppLayout';
@@ -5,7 +6,7 @@ import StudentProfileForm from '@/components/profile/StudentProfileForm';
 import TutorProfileForm from '@/components/profile/TutorProfileForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import type { StudentUser, TutorUser } from '@/lib/types';
+import type { StudentUser, TutorUser, User } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle } from 'lucide-react';
@@ -15,7 +16,7 @@ import { Button } from '@/components/ui/button';
 
 
 export default function ProfilePage() {
-  const { user, loading } = useAuth();
+  const { user, loading, updateUserInContext } = useAuth();
 
   if (loading) {
     return (
@@ -65,11 +66,16 @@ export default function ProfilePage() {
   }
 
   const getInitials = (name: string) => {
+    if (!name) return '?';
     return name
       .split(' ')
       .map((n) => n[0])
       .join('')
       .toUpperCase();
+  };
+
+  const handleProfileUpdate = (updatedUser: User) => {
+    updateUserInContext(updatedUser);
   };
 
   return (
@@ -83,7 +89,7 @@ export default function ProfilePage() {
           <CardContent>
             <div className="flex items-center space-x-4 mb-8">
               <Avatar className="h-20 w-20">
-                <AvatarImage src={user.avatarUrl} alt={user.name} data-ai-hint="person portrait" />
+                <AvatarImage src={user.avatarUrl || undefined} alt={user.name} data-ai-hint="person portrait" />
                 <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
               </Avatar>
               <div>
@@ -93,8 +99,8 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {user.role === 'student' && <StudentProfileForm student={user as StudentUser} />}
-            {user.role === 'tutor' && <TutorProfileForm tutor={user as TutorUser} />}
+            {user.role === 'student' && <StudentProfileForm student={user as StudentUser} onProfileUpdate={handleProfileUpdate} />}
+            {user.role === 'tutor' && <TutorProfileForm tutor={user as TutorUser} onProfileUpdate={handleProfileUpdate} />}
             {user.role !== 'student' && user.role !== 'tutor' && (
                 <p>Type de profil non supporté pour l'édition.</p>
             )}

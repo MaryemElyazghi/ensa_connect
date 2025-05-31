@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,8 +16,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import type { TutorUser } from "@/lib/types";
-import { Save } from "lucide-react";
+import type { TutorUser, User } from "@/lib/types";
+import { Save, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 
 const tutorProfileSchema = z.object({
   name: z.string().min(2, { message: "Le nom doit contenir au moins 2 caractères." }),
@@ -25,16 +27,20 @@ const tutorProfileSchema = z.object({
   experience: z.string().min(1, { message: "Veuillez décrire votre expérience." }),
   availability: z.string().min(1, { message: "Veuillez indiquer vos disponibilités." }),
   bio: z.string().optional(),
+  avatarUrl: z.string().url({ message: "Veuillez entrer une URL valide pour l'avatar." }).optional().or(z.literal('')),
 });
 
 type TutorProfileFormValues = z.infer<typeof tutorProfileSchema>;
 
 interface TutorProfileFormProps {
-  tutor: TutorUser; // Initial data
+  tutor: TutorUser;
+  onProfileUpdate: (updatedUser: User) => void;
 }
 
-export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
+export default function TutorProfileForm({ tutor, onProfileUpdate }: TutorProfileFormProps) {
   const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+
   const form = useForm<TutorProfileFormValues>({
     resolver: zodResolver(tutorProfileSchema),
     defaultValues: {
@@ -44,23 +50,59 @@ export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
       experience: tutor.experience || "",
       availability: tutor.availability || "",
       bio: tutor.bio || "",
+      avatarUrl: tutor.avatarUrl || "",
     },
   });
 
-  async function onSubmit(values: TutorProfileFormValues) {
-    // Simulate API call to update profile
-    console.log("Updating tutor profile:", { ...values, id: tutor.id });
-    const updatedProfile = {
-      ...tutor,
-      ...values,
-      teachableSubjects: values.teachableSubjects.split(',').map(s => s.trim()).filter(s => s),
-    };
-    console.log("Updated tutor data (mock):", updatedProfile);
-
-    toast({
-      title: "Profil mis à jour",
-      description: "Vos informations ont été enregistrées avec succès.",
+  useEffect(() => {
+    form.reset({
+      name: tutor.name || "",
+      email: tutor.email || "",
+      teachableSubjects: tutor.teachableSubjects?.join(", ") || "",
+      experience: tutor.experience || "",
+      availability: tutor.availability || "",
+      bio: tutor.bio || "",
+      avatarUrl: tutor.avatarUrl || "",
     });
+  }, [tutor, form]);
+
+  async function onSubmit(values: TutorProfileFormValues) {
+    setIsLoading(true);
+    try {
+      const teachableSubjectsArray = values.teachableSubjects.split(',').map(s => s.trim()).filter(s => s);
+      const payload = {
+        ...values,
+        teachableSubjects: teachableSubjectsArray,
+        role: 'tutor', // Ensure role is passed for backend logic if needed
+      };
+
+      const response = await fetch(`/api/profile/${tutor.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const updatedUserData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(updatedUserData.message || "Erreur lors de la mise à jour du profil.");
+      }
+      
+      onProfileUpdate(updatedUserData as User); // Update AuthContext
+      toast({
+        title: "Profil mis à jour",
+        description: "Vos informations ont été enregistrées avec succès.",
+      });
+
+    } catch (error) {
+      toast({
+        title: "Erreur de mise à jour",
+        description: (error as Error).message || "Une erreur s'est produite.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -73,7 +115,7 @@ export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
             <FormItem>
               <FormLabel>Nom complet</FormLabel>
               <FormControl>
-                <Input placeholder="Votre nom et prénom" {...field} />
+                <Input placeholder="Votre nom et prénom" {...field} disabled={isLoading}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -94,12 +136,25 @@ export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
         />
         <FormField
           control={form.control}
+          name="avatarUrl"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>URL de l'avatar (optionnel)</FormLabel>
+              <FormControl>
+                <Input placeholder="https://exemple.com/avatar.png" {...field} disabled={isLoading} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
           name="teachableSubjects"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Matières enseignées (séparées par une virgule)</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: Algorithmique, Bases de données" {...field} />
+                <Input placeholder="Ex: Algorithmique, Bases de données" {...field} disabled={isLoading}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -112,7 +167,7 @@ export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
             <FormItem>
               <FormLabel>Expérience</FormLabel>
               <FormControl>
-                <Textarea placeholder="Décrivez votre expérience en tant que tuteur..." {...field} />
+                <Textarea placeholder="Décrivez votre expérience en tant que tuteur..." {...field} disabled={isLoading}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -125,7 +180,7 @@ export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
             <FormItem>
               <FormLabel>Disponibilités</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: Lundis et Mercredis soirs, Weekends" {...field} />
+                <Input placeholder="Ex: Lundis et Mercredis soirs, Weekends" {...field} disabled={isLoading}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -138,15 +193,15 @@ export default function TutorProfileForm({ tutor }: TutorProfileFormProps) {
             <FormItem>
               <FormLabel>Biographie (optionnel)</FormLabel>
               <FormControl>
-                <Textarea placeholder="Parlez un peu de vous, de votre méthode d'enseignement..." {...field} />
+                <Textarea placeholder="Parlez un peu de vous, de votre méthode d'enseignement..." {...field} disabled={isLoading}/>
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit">
-          <Save className="mr-2 h-4 w-4" />
-          Enregistrer les modifications
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          {isLoading ? "Enregistrement..." : "Enregistrer les modifications"}
         </Button>
       </form>
     </Form>

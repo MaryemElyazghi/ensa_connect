@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,8 +20,9 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus } from "lucide-react";
-import { useEffect } from "react";
+import { UserPlus, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { User } from "@/lib/types";
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "Le nom doit contenir au moins 2 caractères." }),
@@ -34,12 +36,12 @@ const formSchema = z.object({
 });
 
 export default function SignupForm() {
-  const { login } = useAuth(); // Using login to simulate successful signup and login
+  const { login } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const initialRole = searchParams.get('role') === 'tutor' ? 'tutor' : 'student';
-
+  const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -56,12 +58,27 @@ export default function SignupForm() {
     form.setValue('role', initialRole);
   }, [initialRole, form]);
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // Simulate API call for registration
-    console.log("Signup attempt:", values);
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setIsLoading(true);
     try {
-      // On successful registration, log the user in (mock)
-      login(values.role);
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: values.name,
+          email: values.email,
+          password: values.password,
+          role: values.role,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Erreur lors de l'inscription.");
+      }
+      
+      login(data as User); // data should be the user object from the API
       toast({
         title: "Inscription réussie !",
         description: `Bienvenue sur ENSA Connect, ${values.name} ! Votre compte a été créé.`,
@@ -70,9 +87,11 @@ export default function SignupForm() {
     } catch (error) {
       toast({
         title: "Erreur d'inscription",
-        description: "Une erreur s'est produite. Veuillez réessayer.",
+        description: (error as Error).message || "Une erreur s'est produite. Veuillez réessayer.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -92,7 +111,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Nom complet</FormLabel>
                   <FormControl>
-                    <Input placeholder="Votre nom et prénom" {...field} />
+                    <Input placeholder="Votre nom et prénom" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -105,7 +124,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="exemple@etu.uae.ac.ma" {...field} />
+                    <Input placeholder="exemple@etu.uae.ac.ma" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -118,7 +137,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Mot de passe</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="********" {...field} />
+                    <Input type="password" placeholder="********" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -131,7 +150,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Confirmer le mot de passe</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="********" {...field} />
+                    <Input type="password" placeholder="********" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -148,6 +167,7 @@ export default function SignupForm() {
                       onValueChange={field.onChange}
                       value={field.value}
                       className="flex space-x-4"
+                      disabled={isLoading}
                     >
                       <FormItem className="flex items-center space-x-2 space-y-0">
                         <FormControl>
@@ -167,9 +187,13 @@ export default function SignupForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full">
-              <UserPlus className="mr-2 h-4 w-4" />
-              S'inscrire
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <UserPlus className="mr-2 h-4 w-4" />
+              )}
+              {isLoading ? "Inscription en cours..." : "S'inscrire"}
             </Button>
           </form>
         </Form>

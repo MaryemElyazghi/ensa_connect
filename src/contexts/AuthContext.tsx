@@ -1,77 +1,72 @@
+
 "use client";
 
 import type { User } from '@/lib/types';
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
-
-// Mock user data
-const mockStudent: User = {
-  id: 'student123',
-  email: 'etudiant@ensa.dev',
-  name: 'Alice Étudiante',
-  role: 'student',
-  program: 'Génie Informatique',
-  level: '3ème année',
-  difficultSubjects: ['Algorithmique avancée', 'Compilation'],
-  avatarUrl: 'https://placehold.co/100x100.png',
-};
-
-const mockTutor: User = {
-  id: 'tutor456',
-  email: 'tuteur@ensa.dev',
-  name: 'Bob Tuteur',
-  role: 'tutor',
-  teachableSubjects: ['Algorithmique', 'Bases de données', 'Développement Web'],
-  experience: "Ancien élève ENSA, 2 ans d'expérience en tutorat.",
-  availability: 'Lundi, Mercredi 18h-20h',
-  bio: "Passionné par l'enseignement et l'informatique, je suis là pour vous aider à réussir !",
-  avatarUrl: 'https://placehold.co/100x100.png',
-};
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
 
 interface AuthContextType {
   user: User | null;
-  login: (role: 'student' | 'tutor') => void;
+  login: (userData: User) => void;
   logout: () => void;
+  updateUserInContext: (updatedUserData: User) => void;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const USER_STORAGE_KEY = 'ensa-connect-user';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate checking for an existing session
-    const storedUserRole = localStorage.getItem('ensa-connect-user-role');
-    if (storedUserRole === 'student') {
-      setUser(mockStudent);
-    } else if (storedUserRole === 'tutor') {
-      setUser(mockTutor);
+    const storedUserString = localStorage.getItem(USER_STORAGE_KEY);
+    if (storedUserString) {
+      try {
+        const storedUser = JSON.parse(storedUserString) as User;
+        // Potentially re-fetch user data here for freshness if needed
+        // For now, we'll trust localStorage for simplicity in prototype
+        setUser(storedUser);
+      } catch (e) {
+        console.error("Failed to parse stored user:", e);
+        localStorage.removeItem(USER_STORAGE_KEY);
+      }
     }
     setLoading(false);
   }, []);
 
-  const login = (role: 'student' | 'tutor') => {
+  const login = useCallback((userData: User) => {
     setLoading(true);
-    if (role === 'student') {
-      setUser(mockStudent);
-      localStorage.setItem('ensa-connect-user-role', 'student');
-    } else {
-      setUser(mockTutor);
-      localStorage.setItem('ensa-connect-user-role', 'tutor');
-    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userToStore } = userData; // Ensure password is not stored
+    setUser(userToStore as User);
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userToStore));
     setLoading(false);
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setLoading(true);
     setUser(null);
-    localStorage.removeItem('ensa-connect-user-role');
+    localStorage.removeItem(USER_STORAGE_KEY);
     setLoading(false);
-  };
+  }, []);
+
+  const updateUserInContext = useCallback((updatedUserData: User) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userToStore } = updatedUserData; // Ensure password is not stored
+    setUser(prevUser => {
+      if (prevUser && prevUser.id === userToStore.id) {
+        const newUserState = { ...prevUser, ...userToStore } as User;
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(newUserState));
+        return newUserState;
+      }
+      return prevUser;
+    });
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUserInContext, loading }}>
       {children}
     </AuthContext.Provider>
   );
