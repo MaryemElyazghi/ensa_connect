@@ -1,46 +1,138 @@
+
 "use client";
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { TutoringRequest } from '@/lib/types';
-import { AlertTriangle, CheckCircle2, Clock, Hourglass, Users, CalendarDays } from 'lucide-react';
+import type { TutoringRequest, TutorUser } from '@/lib/types';
+import { AlertTriangle, CheckCircle2, Clock, Hourglass, CalendarDays, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { useToast } from '@/hooks/use-toast';
 
-const mockTutorSessions: TutoringRequest[] = [
-  {
-    id: 'req1', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Algorithmique', level: '3ème année',
-    description: 'Besoin d\'aide sur les graphes.', studentAvailability: 'Lundi soir', status: 'active', 
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-07-29T18:00:00Z', createdAt: '2024-07-25T10:00:00Z'
-  },
-  {
-    id: 'req4', studentId: 'student789', studentName: 'Charlie Apprenant', subject: 'Développement Web', level: '2ème année',
-    description: 'Problèmes avec Flexbox en CSS.', studentAvailability: 'Jeudi matin', status: 'pending', 
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', createdAt: '2024-07-27T11:00:00Z'
-  },
-   {
-    id: 'req5', studentId: 'studentABC', studentName: 'Diana Codeuse', subject: 'Bases de Données', level: 'Master 1',
-    description: 'Optimisation de requêtes SQL.', studentAvailability: 'Vendredi après-midi', status: 'completed',
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-07-19T15:00:00Z', createdAt: '2024-07-12T10:00:00Z'
-  },
-  {
-    id: 'req6', studentId: 'studentXYZ', studentName: 'Émile Programmeur', subject: 'Algorithmique', level: '3ème année',
-    description: 'Préparation examen arbres binaires.', studentAvailability: 'Samedi matin', status: 'active', 
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-08-03T10:00:00Z', createdAt: '2024-07-28T15:00:00Z'
-  },
-];
 
-const statusMap: Record<TutoringRequest['status'], { label: string; icon: React.ElementType; color: string }> = {
-  pending: { label: "Nouvelle demande", icon: Hourglass, color: "text-yellow-500" },
-  matched: { label: "Acceptée", icon: CheckCircle2, color: "text-blue-500" }, // Tutor context: matched = accepted
-  active: { label: "À venir / En cours", icon: Clock, color: "text-blue-500" },
-  completed: { label: "Terminée", icon: CheckCircle2, color: "text-green-700" },
-  cancelled: { label: "Annulée", icon: AlertTriangle, color: "text-red-500" },
+const statusMap: Record<TutoringRequest['status'], { label: string; icon: React.ElementType; color: string; badgeVariant: "default" | "secondary" | "destructive" | "outline" | null | undefined }> = {
+  pending: { label: "Nouvelle demande", icon: Hourglass, color: "text-yellow-500", badgeVariant: "secondary" },
+  matched: { label: "Acceptée / À venir", icon: CheckCircle2, color: "text-blue-500", badgeVariant: "default" }, 
+  active: { label: "En cours", icon: Clock, color: "text-blue-500", badgeVariant: "default" },
+  completed: { label: "Terminée", icon: CheckCircle2, color: "text-green-700", badgeVariant: "default" },
+  cancelled: { label: "Annulée", icon: AlertTriangle, color: "text-red-500", badgeVariant: "destructive" },
 };
 
 export default function TutorSessionsPage() {
-  // In a real app, fetch sessions for the logged-in tutor
-  const sessions = mockTutorSessions;
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [sessions, setSessions] = useState<TutoringRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const currentTutor = user as TutorUser | null;
+
+  const fetchSessions = async () => {
+    if (!currentTutor) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/tutoring-requests?tutorId=${currentTutor.id}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch sessions');
+      }
+      const data: TutoringRequest[] = await response.json();
+      // Filter out 'pending' requests that are not yet accepted by *this* tutor,
+      // unless the API already guarantees only assigned requests.
+      // For now, we assume API returns requests where this tutor is `tutorId`.
+      setSessions(data.filter(s => s.status !== 'pending' || s.tutorId === currentTutor.id));
+    } catch (err) {
+      console.error(err);
+      setError((err as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'tutor') {
+      fetchSessions();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  const handleAcceptRequest = async (requestId: string) => {
+    if (!currentTutor) return;
+    try {
+      const response = await fetch(`/api/tutoring-requests/${requestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          tutorId: currentTutor.id, 
+          tutorName: currentTutor.name, 
+          status: 'matched',
+          // scheduledTime: ... // Consider adding a scheduling step or modal
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to accept request');
+      toast({ title: "Demande acceptée!", description: "La session est planifiée." });
+      fetchSessions(); // Refresh data
+    } catch (error) {
+       toast({ title: "Erreur", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+  
+  const handleMarkAsCompleted = async (requestId: string) => {
+    try {
+      const response = await fetch(`/api/tutoring-requests/${requestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      });
+      if (!response.ok) throw new Error('Failed to mark as completed');
+      toast({ title: "Session terminée!", description: "La session a été marquée comme terminée." });
+      fetchSessions(); // Refresh data
+    } catch (error) {
+       toast({ title: "Erreur", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="ml-2">Chargement de vos sessions...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erreur de chargement</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+  
+   if (!user || user.role !== 'tutor') {
+    return (
+      <DashboardLayout>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Accès non autorisé</AlertTitle>
+          <AlertDescription>Cette page est réservée aux tuteurs.</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+
 
   return (
     <DashboardLayout>
@@ -53,7 +145,16 @@ export default function TutorSessionsPage() {
         </div>
         
         {sessions.length === 0 ? (
-          <p className="text-muted-foreground">Vous n'avez pas encore de session de tutorat.</p>
+          <Card className="text-center py-10">
+            <CardContent>
+              <CalendarDays className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold text-foreground">Aucune session pour le moment</h3>
+              <p className="text-muted-foreground">Les demandes que vous acceptez apparaîtront ici.</p>
+               <Button asChild className="mt-4">
+                <Link href="/dashboard/tutor">Voir les nouvelles demandes</Link>
+            </Button>
+            </CardContent>
+          </Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {sessions.map(session => {
@@ -64,10 +165,7 @@ export default function TutorSessionsPage() {
                   <CardHeader>
                     <div className="flex justify-between items-start">
                       <CardTitle className="text-xl">{session.subject} avec {session.studentName}</CardTitle>
-                       <Badge variant={
-                        session.status === 'completed' || session.status === 'active' ? 'default' :
-                        session.status === 'pending' ? 'secondary' : 'destructive'
-                      } className={`capitalize ${statusInfo.color}`}>
+                       <Badge variant={statusInfo.badgeVariant} className={`capitalize ${statusInfo.color}`}>
                         <StatusIcon className="h-4 w-4 mr-1.5" />
                         {statusInfo.label}
                       </Badge>
@@ -81,19 +179,22 @@ export default function TutorSessionsPage() {
                     <p className="text-sm text-muted-foreground line-clamp-2"><span className="font-medium text-foreground">Besoin:</span> {session.description}</p>
                     <p><span className="font-medium">Disponibilités de l'étudiant:</span> {session.studentAvailability}</p>
                   </CardContent>
-                  <CardFooter className="flex justify-end gap-2">
-                    {session.status === 'pending' && (
-                        <>
-                        <Button size="sm">Accepter</Button>
-                        <Button variant="outline" size="sm">Refuser</Button>
-                        </>
+                  <CardFooter className="flex flex-wrap justify-end gap-2">
+                    {session.status === 'pending' && session.tutorId !== currentTutor?.id && ( // A general pending request matching tutor's subjects
+                        <Button size="sm" onClick={() => handleAcceptRequest(session.id)}>Accepter</Button>
                     )}
-                    {(session.status === 'active' || session.status === 'matched') && (
-                      <Button variant="outline" size="sm">Contacter {session.studentName}</Button>
+                     {session.status === 'pending' && session.tutorId === currentTutor?.id && ( // Directly assigned but not yet actioned
+                        <Button size="sm" onClick={() => handleAcceptRequest(session.id)}>Confirmer et Planifier</Button>
+                    )}
+                    {(session.status === 'matched' || session.status === 'active') && (
+                      <>
+                        <Button variant="outline" size="sm">Contacter {session.studentName}</Button>
+                        <Button variant="secondary" size="sm" onClick={() => handleMarkAsCompleted(session.id)}>Marquer comme terminée</Button>
+                      </>
                     )}
                      {session.status === 'completed' && (
                       <Button variant="default" size="sm" asChild>
-                        <Link href={`/session-feedback?session=${session.id}&role=tutor`}>Ajouter des notes</Link>
+                        <Link href={`/session-feedback?session=${session.id}&role=tutor`}>Ajouter/Voir notes</Link>
                       </Button>
                     )}
                   </CardFooter>

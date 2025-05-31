@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,8 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { StudentUser } from "@/lib/types";
-import { Send } from "lucide-react";
+import { Send, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 const tutoringRequestSchema = z.object({
   subject: z.string().min(1, { message: "Veuillez indiquer la matière." }),
@@ -35,38 +37,53 @@ interface TutoringRequestFormProps {
 export default function TutoringRequestForm({ student }: TutoringRequestFormProps) {
   const { toast } = useToast();
   const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<TutoringRequestFormValues>({
     resolver: zodResolver(tutoringRequestSchema),
     defaultValues: {
       subject: "",
-      level: student.level || "", // Pre-fill with student's general level
+      level: student.level || "", 
       description: "",
       studentAvailability: "",
     },
   });
 
   async function onSubmit(values: TutoringRequestFormValues) {
-    // Simulate API call to create tutoring request
-    const newRequest = {
-      id: `req_${Date.now()}`,
-      studentId: student.id,
-      studentName: student.name,
-      ...values,
-      status: 'pending' as const,
-      createdAt: new Date().toISOString(),
-    };
-    console.log("Creating tutoring request:", newRequest);
-    
-    // Add to a mock list of requests (e.g., in localStorage or context for demo)
-    // For now, just show a toast and redirect.
-    
-    toast({
-      title: "Demande de tutorat envoyée",
-      description: "Votre demande a été soumise. Nous vous notifierons lorsqu'un tuteur sera trouvé.",
-    });
-    // Redirect to a page where student can see their requests or to find-tutor to see matches
-    router.push(`/find-tutor?subject=${encodeURIComponent(values.subject)}&level=${encodeURIComponent(values.level)}`);
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        studentId: student.id,
+        studentName: student.name,
+        ...values,
+      };
+
+      const response = await fetch('/api/tutoring-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Erreur lors de la création de la demande.");
+      }
+      
+      toast({
+        title: "Demande de tutorat envoyée",
+        description: "Votre demande a été soumise. Vous pouvez la consulter dans 'Mes Demandes'.",
+      });
+      router.push(`/dashboard/student/requests`);
+    } catch (error) {
+      toast({
+        title: "Erreur d'envoi",
+        description: (error as Error).message || "Une erreur s'est produite.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -79,7 +96,7 @@ export default function TutoringRequestForm({ student }: TutoringRequestFormProp
             <FormItem>
               <FormLabel>Matière</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: Mathématiques, Algorithmique" {...field} />
+                <Input placeholder="Ex: Mathématiques, Algorithmique" {...field} disabled={isSubmitting} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -92,7 +109,7 @@ export default function TutoringRequestForm({ student }: TutoringRequestFormProp
             <FormItem>
               <FormLabel>Votre niveau actuel dans cette matière</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: Débutant, Intermédiaire, 1ère année..." {...field} />
+                <Input placeholder="Ex: Débutant, Intermédiaire, 1ère année..." {...field} disabled={isSubmitting} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -105,7 +122,7 @@ export default function TutoringRequestForm({ student }: TutoringRequestFormProp
             <FormItem>
               <FormLabel>Description de vos besoins</FormLabel>
               <FormControl>
-                <Textarea rows={4} placeholder="Décrivez les chapitres ou concepts spécifiques avec lesquels vous avez besoin d'aide..." {...field} />
+                <Textarea rows={4} placeholder="Décrivez les chapitres ou concepts spécifiques avec lesquels vous avez besoin d'aide..." {...field} disabled={isSubmitting} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -118,15 +135,15 @@ export default function TutoringRequestForm({ student }: TutoringRequestFormProp
             <FormItem>
               <FormLabel>Vos disponibilités</FormLabel>
               <FormControl>
-                <Input placeholder="Ex: Lundis et Mercredis après 18h, Samedi matin" {...field} />
+                <Input placeholder="Ex: Lundis et Mercredis après 18h, Samedi matin" {...field} disabled={isSubmitting} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full sm:w-auto">
-          <Send className="mr-2 h-4 w-4" />
-          Envoyer la demande
+        <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
+          {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+          {isSubmitting ? "Envoi en cours..." : "Envoyer la demande"}
         </Button>
       </form>
     </Form>

@@ -1,11 +1,12 @@
 export type UserRole = 'student' | 'tutor' | 'admin';
 
 export interface BaseUser {
-  id: string;
+  id: string; // Corresponds to MongoDB _id
   email: string;
   name: string;
   role: UserRole;
   avatarUrl?: string;
+  // password field should not be here, it's for backend only
 }
 
 export interface StudentProfileData {
@@ -20,8 +21,8 @@ export interface StudentUser extends BaseUser, StudentProfileData {
 
 export interface TutorProfileData {
   teachableSubjects: string[];
-  experience: string; // e.g., "2 ans d'expérience en mathématiques niveau lycée"
-  availability: string; // Simple text for now, e.g. "Soirs de semaine, weekends"
+  experience: string; 
+  availability: string; 
   bio?: string;
 }
 
@@ -29,38 +30,38 @@ export interface TutorUser extends BaseUser, TutorProfileData {
   role: 'tutor';
 }
 
-export type User = StudentUser | TutorUser | BaseUser; // BaseUser for admin or generic user
+export type User = StudentUser | TutorUser | BaseUser; 
 
 export interface TutoringRequest {
-  id: string;
-  studentId: string;
+  id: string; // Corresponds to MongoDB _id
+  studentId: string; // Store as string, can be ObjectId in DB
   studentName: string;
   subject: string;
-  level: string; // Student's current level for the subject
-  description: string; // More details about help needed
-  studentAvailability: string; // e.g., "Mardi et Jeudi après 17h"
+  level: string; 
+  description: string; 
+  studentAvailability: string; 
   status: 'pending' | 'matched' | 'active' | 'completed' | 'cancelled';
-  tutorId?: string;
+  tutorId?: string; // Store as string, can be ObjectId in DB
   tutorName?: string;
-  scheduledTime?: string; // ISO date string
-  createdAt: string; // ISO date string
+  scheduledTime?: string; 
+  createdAt: string; 
+  updatedAt?: string;
+  // Consider adding student and tutor objects if populated
+  student?: StudentUser;
+  tutor?: TutorUser;
 }
 
 export interface SessionFeedback {
-  id: string;
-  requestId: string; // Link to TutoringRequest
+  id: string; // Corresponds to MongoDB _id
+  requestId: string; 
   studentId: string;
   tutorId: string;
-  rating: number; // 1-5
+  rating: number; 
   studentComments?: string;
-  tutorComments?: string; // Tutor might also add notes
+  tutorComments?: string; 
   topicsCovered: string;
-  sessionDate: string; // ISO date string
+  sessionDate: string; 
   durationMinutes?: number;
-}
-
-export interface LearningMaterialSuggestion {
-  studentMaterials: string[];
-  tutorMaterials: string[];
-  explanation: string;
+  createdAt?: string;
+  updatedAt?: string;
 }

@@ -1,47 +1,101 @@
+
 "use client";
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { TutoringRequest } from '@/lib/types';
-import { AlertTriangle, CheckCircle2, Clock, Hourglass, MessageSquare } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Hourglass, MessageSquare, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
-const mockRequests: TutoringRequest[] = [
-  {
-    id: 'req1', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Algorithmique', level: '3ème année',
-    description: 'Besoin d\'aide sur les graphes.', studentAvailability: 'Lundi soir', status: 'matched',
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-07-29T18:00:00Z', createdAt: '2024-07-25T10:00:00Z'
-  },
-  {
-    id: 'req2', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Compilation', level: '3ème année',
-    description: 'Comprendre les analyseurs syntaxiques.', studentAvailability: 'Mercredi après-midi', status: 'pending',
-    createdAt: '2024-07-26T14:30:00Z'
-  },
-  {
-    id: 'req3', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Bases de données', level: '2ème année',
-    description: 'Révision pour partiel.', studentAvailability: 'Weekend', status: 'completed',
-    tutorId: 'tutor2', tutorName: 'Marcus Chen', scheduledTime: '2024-07-20T10:00:00Z', createdAt: '2024-07-15T09:00:00Z'
-  },
-  {
-    id: 'req4', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Réseaux', level: 'Master 1',
-    description: 'Configuration de VLANs.', studentAvailability: 'Vendredi matin', status: 'cancelled',
-    createdAt: '2024-07-10T09:00:00Z'
-  },
-];
-
-const statusMap: Record<TutoringRequest['status'], { label: string; icon: React.ElementType; color: string }> = {
-  pending: { label: "En attente", icon: Hourglass, color: "text-yellow-500" },
-  matched: { label: "Confirmée", icon: CheckCircle2, color: "text-green-500" },
-  active: { label: "En cours", icon: Clock, color: "text-blue-500" },
-  completed: { label: "Terminée", icon: CheckCircle2, color: "text-green-700" },
-  cancelled: { label: "Annulée", icon: AlertTriangle, color: "text-red-500" },
+const statusMap: Record<TutoringRequest['status'], { label: string; icon: React.ElementType; color: string; badgeVariant: "default" | "secondary" | "destructive" | "outline" | null | undefined }> = {
+  pending: { label: "En attente", icon: Hourglass, color: "text-yellow-500", badgeVariant: "secondary" },
+  matched: { label: "Confirmée", icon: CheckCircle2, color: "text-green-500", badgeVariant: "default" },
+  active: { label: "En cours", icon: Clock, color: "text-blue-500", badgeVariant: "default" }, // Assuming active means scheduled/upcoming for student
+  completed: { label: "Terminée", icon: CheckCircle2, color: "text-green-700", badgeVariant: "default" },
+  cancelled: { label: "Annulée", icon: AlertTriangle, color: "text-red-500", badgeVariant: "destructive" },
 };
 
 
 export default function StudentRequestsPage() {
-  // In a real app, fetch requests for the logged-in student
-  const requests = mockRequests;
+  const { user } = useAuth();
+  const [requests, setRequests] = useState<TutoringRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && user.role === 'student') {
+      const fetchRequests = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+          const response = await fetch(`/api/tutoring-requests?studentId=${user.id}`);
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to fetch tutoring requests');
+          }
+          const data: TutoringRequest[] = await response.json();
+          setRequests(data);
+        } catch (err) {
+          console.error(err);
+          setError((err as Error).message);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchRequests();
+    } else {
+      setIsLoading(false); // Not a student or no user, stop loading
+    }
+  }, [user]);
+
+  // TODO: Implement cancel request functionality
+  // async function cancelRequest(requestId: string) {
+  //   // Call API to update request status to 'cancelled'
+  //   // Update local state or re-fetch
+  // }
+
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" /> 
+          <p className="ml-2">Chargement de vos demandes...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erreur de chargement</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+  
+  if (!user || user.role !== 'student') {
+    // This check might be redundant if DashboardLayout handles unauthorized access,
+    // but it's good for robustness.
+    return (
+      <DashboardLayout>
+         <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Accès non autorisé</AlertTitle>
+          <AlertDescription>Cette page est réservée aux étudiants.</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+
 
   return (
     <DashboardLayout>
@@ -60,10 +114,7 @@ export default function StudentRequestsPage() {
                   <CardHeader>
                     <div className="flex justify-between items-start">
                       <CardTitle className="text-xl">{req.subject}</CardTitle>
-                      <Badge variant={
-                        req.status === 'completed' || req.status === 'matched' ? 'default' :
-                        req.status === 'pending' ? 'secondary' : 'destructive'
-                      } className={`capitalize ${statusInfo.color}`}>
+                      <Badge variant={statusInfo.badgeVariant} className={`capitalize ${statusInfo.color}`}>
                         <StatusIcon className="h-4 w-4 mr-1.5" />
                         {statusInfo.label}
                       </Badge>
@@ -77,15 +128,16 @@ export default function StudentRequestsPage() {
                     {req.scheduledTime && <p><span className="font-medium">Session planifiée:</span> {new Date(req.scheduledTime).toLocaleString('fr-FR')}</p>}
                   </CardContent>
                   <CardFooter className="flex justify-end gap-2">
-                    {(req.status === 'matched' || req.status === 'active') && (
+                    {(req.status === 'matched' || req.status === 'active') && req.tutorName && (
                       <Button variant="outline" size="sm" asChild>
-                        <Link href={`/chat/${req.id}`}> {/* Mock chat link */}
-                          <MessageSquare className="h-4 w-4 mr-1.5" /> Contacter {req.tutorName}
+                        {/* Chat link functionality to be implemented */}
+                        <Link href={`#`}> 
+                          <MessageSquare className="h-4 w-4 mr-1.5" /> Contacter {req.tutorName.split(' ')[0]}
                         </Link>
                       </Button>
                     )}
                     {req.status === 'pending' && (
-                      <Button variant="destructive" size="sm">Annuler la demande</Button>
+                      <Button variant="destructive" size="sm" /*onClick={() => cancelRequest(req.id)}*/>Annuler la demande</Button>
                     )}
                      {req.status === 'completed' && (
                       <Button variant="default" size="sm" asChild>

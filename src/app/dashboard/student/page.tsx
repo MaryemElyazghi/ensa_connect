@@ -1,37 +1,50 @@
+
 "use client";
 
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import type { TutoringRequest } from '@/lib/types';
-import { AlertCircle, PlusCircle, ListChecks, History, Star } from 'lucide-react';
+import { AlertCircle, PlusCircle, ListChecks, History, Star, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-
-// Mock data for student's requests
-const mockRequests: TutoringRequest[] = [
-  {
-    id: 'req1', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Algorithmique', level: '3ème année',
-    description: 'Besoin d\'aide sur les graphes.', studentAvailability: 'Lundi soir', status: 'matched',
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-07-29T18:00:00Z', createdAt: '2024-07-25T10:00:00Z'
-  },
-  {
-    id: 'req2', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Compilation', level: '3ème année',
-    description: 'Comprendre les analyseurs syntaxiques.', studentAvailability: 'Mercredi après-midi', status: 'pending',
-    createdAt: '2024-07-26T14:30:00Z'
-  },
-  {
-    id: 'req3', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Bases de données', level: '2ème année',
-    description: 'Révision pour partiel.', studentAvailability: 'Weekend', status: 'completed',
-    tutorId: 'tutor2', tutorName: 'Marcus Chen', scheduledTime: '2024-07-20T10:00:00Z', createdAt: '2024-07-15T09:00:00Z'
-  },
-];
-
+import { useEffect, useState } from 'react';
 
 export default function StudentDashboardPage() {
   const { user } = useAuth();
+  const [requests, setRequests] = useState<TutoringRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && user.role === 'student') {
+      const fetchRequests = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+          const response = await fetch(`/api/tutoring-requests?studentId=${user.id}`);
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to fetch tutoring requests');
+          }
+          const data: TutoringRequest[] = await response.json();
+          setRequests(data);
+        } catch (err) {
+          console.error(err);
+          setError((err as Error).message);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchRequests();
+    } else if (user && user.role !== 'student') {
+        setIsLoading(false); // Not a student, no requests to load for this dashboard
+    } else {
+        setIsLoading(false); // No user logged in
+    }
+  }, [user]);
 
   if (!user || user.role !== 'student') {
     return (
@@ -44,9 +57,33 @@ export default function StudentDashboardPage() {
       </DashboardLayout>
     );
   }
+  
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" /> 
+          <p className="ml-2">Chargement de vos données...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
-  const upcomingSessions = mockRequests.filter(r => r.status === 'matched' || r.status === 'active');
-  const pendingRequests = mockRequests.filter(r => r.status === 'pending');
+  if (error) {
+    return (
+      <DashboardLayout>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erreur de chargement</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+
+  const upcomingSessions = requests.filter(r => r.status === 'matched' || r.status === 'active');
+  const pendingRequests = requests.filter(r => r.status === 'pending');
+  const completedSessions = requests.filter(r => r.status === 'completed');
 
   return (
     <DashboardLayout>
@@ -104,13 +141,13 @@ export default function StudentDashboardPage() {
                 <Card key={req.id} className="shadow-sm">
                   <CardHeader>
                     <CardTitle>{req.subject}</CardTitle>
-                    <CardDescription>Avec {req.tutorName} - Le {new Date(req.scheduledTime!).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</CardDescription>
+                    <CardDescription>Avec {req.tutorName} - Le {req.scheduledTime ? new Date(req.scheduledTime).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Date à confirmer'}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground mb-2">Niveau: {req.level}</p>
                     <p className="text-sm text-muted-foreground line-clamp-2">Description: {req.description}</p>
                   </CardContent>
-                  <CardFooter>
+                   <CardFooter>
                      <Button variant="outline" size="sm" asChild>
                         <Link href={`/session-feedback?session=${req.id}`}>Donner un feedback (après session)</Link>
                     </Button>
@@ -121,26 +158,21 @@ export default function StudentDashboardPage() {
           </section>
         )}
 
-        {mockRequests.filter(r => r.status === 'completed').length > 0 && (
+        {completedSessions.length > 0 && (
            <section>
             <h2 className="font-headline text-2xl font-semibold text-foreground mb-4">Historique des sessions</h2>
              <div className="space-y-4">
-                {mockRequests.filter(r => r.status === 'completed').map(req => (
+                {completedSessions.map(req => (
                     <Card key={req.id} className="shadow-sm">
                         <CardHeader>
                             <CardTitle className="text-lg">{req.subject}</CardTitle>
-                            <CardDescription>Session avec {req.tutorName} - Terminée le {new Date(req.scheduledTime!).toLocaleDateString('fr-FR')}</CardDescription>
+                            <CardDescription>Session avec {req.tutorName} - Terminée le {req.scheduledTime ? new Date(req.scheduledTime).toLocaleDateString('fr-FR') : 'Date inconnue'}</CardDescription>
                         </CardHeader>
                         <CardFooter className="flex justify-between items-center">
                             <Link href={`/session-feedback?session=${req.id}&view=true`} className="text-sm text-primary hover:underline">
-                                Voir le feedback
+                                Voir le feedback (si disponible)
                             </Link>
-                            {/* Mock rating display */}
-                            <div className="flex items-center">
-                                {[...Array(Math.floor(Math.random() * 2) + 4)].map((_, i) => (
-                                    <Star key={i} className="h-4 w-4 text-yellow-400 fill-yellow-400" />
-                                ))}
-                            </div>
+                            {/* Placeholder for actual feedback rating if fetched */}
                         </CardFooter>
                     </Card>
                 ))}
@@ -149,10 +181,10 @@ export default function StudentDashboardPage() {
         )}
 
 
-        {!upcomingSessions.length && !pendingRequests.length && mockRequests.filter(r => r.status === 'completed').length === 0 && (
+        {!isLoading && requests.length === 0 && (
             <Card className="text-center py-12">
               <CardContent>
-                <Image src="https://placehold.co/300x200.png" alt="No requests" width={300} height={200} className="mx-auto mb-6 rounded-md" data-ai-hint="empty state illustration" />
+                <Image src="https://placehold.co/300x200.png" alt="No requests" width={300} height={200} className="mx-auto mb-6 rounded-md" data-ai-hint="empty state illustration"/>
                 <h3 className="text-xl font-semibold mb-2">Aucune activité pour le moment</h3>
                 <p className="text-muted-foreground mb-4">Commencez par faire une demande de tutorat pour trouver de l'aide.</p>
                 <Button asChild>

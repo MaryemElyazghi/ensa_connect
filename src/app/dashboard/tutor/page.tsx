@@ -1,36 +1,95 @@
+
 "use client";
 
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import type { TutoringRequest } from '@/lib/types';
-import { AlertCircle, CalendarClock, ListChecks, UserCheck, Users } from 'lucide-react';
+import type { TutoringRequest, TutorUser } from '@/lib/types';
+import { AlertCircle, CalendarClock, ListChecks, UserCheck, Users, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-
-// Mock data for tutor's sessions/requests
-const mockTutorSessions: TutoringRequest[] = [
-  {
-    id: 'req1', studentId: 'student123', studentName: 'Alice Étudiante', subject: 'Algorithmique', level: '3ème année',
-    description: 'Besoin d\'aide sur les graphes.', studentAvailability: 'Lundi soir', status: 'active', // Active means accepted by tutor
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-07-29T18:00:00Z', createdAt: '2024-07-25T10:00:00Z'
-  },
-  {
-    id: 'req4', studentId: 'student789', studentName: 'Charlie Apprenant', subject: 'Développement Web', level: '2ème année',
-    description: 'Problèmes avec Flexbox en CSS.', studentAvailability: 'Jeudi matin', status: 'pending', // Pending for tutor to accept
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', createdAt: '2024-07-27T11:00:00Z'
-  },
-   {
-    id: 'req5', studentId: 'studentABC', studentName: 'Diana Codeuse', subject: 'Bases de Données', level: 'Master 1',
-    description: 'Optimisation de requêtes SQL.', studentAvailability: 'Vendredi après-midi', status: 'completed',
-    tutorId: 'tutor456', tutorName: 'Bob Tuteur', scheduledTime: '2024-07-19T15:00:00Z', createdAt: '2024-07-12T10:00:00Z'
-  },
-];
+import { useEffect, useState } from 'react';
+import { useToast } from "@/hooks/use-toast";
 
 export default function TutorDashboardPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [pendingRequests, setPendingRequests] = useState<TutoringRequest[]>([]);
+  const [upcomingSessions, setUpcomingSessions] = useState<TutoringRequest[]>([]);
+  const [completedSessionsCount, setCompletedSessionsCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const currentTutor = user as TutorUser | null;
+
+  const fetchTutorData = async () => {
+    if (!currentTutor) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Fetch pending requests (could be all, or filtered by tutor's subjects server-side)
+      const pendingRes = await fetch(`/api/tutoring-requests?status=pending`);
+      if (!pendingRes.ok) throw new Error('Failed to fetch pending requests');
+      let allPending: TutoringRequest[] = await pendingRes.json();
+      // Client-side filter for demo: tutor sees requests matching their subjects
+      allPending = allPending.filter(req => 
+        currentTutor.teachableSubjects.some(subj => subj.toLowerCase() === req.subject.toLowerCase())
+      );
+      setPendingRequests(allPending);
+
+      // Fetch sessions matched with this tutor (upcoming/active)
+      const upcomingRes = await fetch(`/api/tutoring-requests?tutorId=${currentTutor.id}&status=matched`); // or 'active'
+      if (!upcomingRes.ok) throw new Error('Failed to fetch upcoming sessions');
+      setUpcomingSessions(await upcomingRes.json());
+      
+      // Fetch completed sessions for this tutor to count students helped
+      const completedRes = await fetch(`/api/tutoring-requests?tutorId=${currentTutor.id}&status=completed`);
+      if (!completedRes.ok) throw new Error('Failed to fetch completed sessions');
+      const completedData: TutoringRequest[] = await completedRes.json();
+      setCompletedSessionsCount(new Set(completedData.map(s => s.studentId)).size);
+
+    } catch (err) {
+      console.error(err);
+      setError((err as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user && user.role === 'tutor') {
+      fetchTutorData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  const handleAcceptRequest = async (requestId: string) => {
+    if (!currentTutor) return;
+    try {
+      const response = await fetch(`/api/tutoring-requests/${requestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          tutorId: currentTutor.id, 
+          tutorName: currentTutor.name, 
+          status: 'matched', // Or prompt for scheduling then 'matched'
+          // scheduledTime: new Date().toISOString() // Placeholder, ideally a scheduling step
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to accept request');
+      }
+      toast({ title: "Demande acceptée!", description: "La session est maintenant planifiée." });
+      fetchTutorData(); // Refresh data
+    } catch (error) {
+      toast({ title: "Erreur", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+
 
   if (!user || user.role !== 'tutor') {
     return (
@@ -43,10 +102,30 @@ export default function TutorDashboardPage() {
       </DashboardLayout>
     );
   }
+  
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+           <p className="ml-2">Chargement du tableau de bord...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
-  const upcomingSessions = mockTutorSessions.filter(s => s.status === 'active');
-  const pendingRequests = mockTutorSessions.filter(s => s.status === 'pending'); // Requests assigned to this tutor
-  const totalStudentsHelped = new Set(mockTutorSessions.filter(s => s.status === 'completed').map(s => s.studentId)).size;
+   if (error) {
+    return (
+      <DashboardLayout>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erreur de chargement</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </DashboardLayout>
+    );
+  }
+
 
   return (
     <DashboardLayout>
@@ -59,13 +138,13 @@ export default function TutorDashboardPage() {
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <Card className="shadow-md hover:shadow-lg transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Demandes en attente</CardTitle>
+              <CardTitle className="text-sm font-medium">Demandes pertinentes</CardTitle>
               <ListChecks className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{pendingRequests.length}</div>
               <p className="text-xs text-muted-foreground">
-                {pendingRequests.length > 0 ? "Nouvelles demandes à examiner" : "Aucune nouvelle demande"}
+                {pendingRequests.length > 0 ? "Nouvelles demandes à examiner" : "Aucune nouvelle demande pertinente"}
               </p>
             </CardContent>
           </Card>
@@ -87,7 +166,7 @@ export default function TutorDashboardPage() {
               <Users className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalStudentsHelped}</div>
+              <div className="text-2xl font-bold">{completedSessionsCount}</div>
               <p className="text-xs text-muted-foreground">Nombre total d'étudiants uniques</p>
             </CardContent>
           </Card>
@@ -107,9 +186,9 @@ export default function TutorDashboardPage() {
                     <p className="text-sm text-muted-foreground line-clamp-2">Besoin: {req.description}</p>
                   </CardContent>
                   <CardFooter className="gap-2">
-                    <Button size="sm"><UserCheck className="mr-2 h-4 w-4"/> Accepter</Button>
-                    <Button size="sm" variant="outline">Refuser</Button>
-                    <Button size="sm" variant="ghost">Plus de détails</Button>
+                    <Button size="sm" onClick={() => handleAcceptRequest(req.id)}><UserCheck className="mr-2 h-4 w-4"/> Accepter</Button>
+                    {/* <Button size="sm" variant="outline">Refuser</Button> */}
+                    {/* <Button size="sm" variant="ghost">Plus de détails</Button> */}
                   </CardFooter>
                 </Card>
               ))}
@@ -125,14 +204,14 @@ export default function TutorDashboardPage() {
                 <Card key={req.id} className="shadow-sm">
                   <CardHeader>
                     <CardTitle>{req.subject} avec {req.studentName}</CardTitle>
-                    <CardDescription>Le {new Date(req.scheduledTime!).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</CardDescription>
+                    <CardDescription>{req.scheduledTime ? `Le ${new Date(req.scheduledTime).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}` : "Date à définir"}</CardDescription>
                   </CardHeader>
                    <CardContent>
                     <p className="text-sm text-muted-foreground line-clamp-2">Demande: {req.description}</p>
                   </CardContent>
                   <CardFooter>
                     <Button variant="outline" size="sm" asChild>
-                        <Link href={`/session-feedback?session=${req.id}`}>Ajouter des notes (après session)</Link>
+                        <Link href={`/session-feedback?session=${req.id}&role=tutor`}>Ajouter des notes (après session)</Link>
                     </Button>
                   </CardFooter>
                 </Card>
@@ -141,7 +220,7 @@ export default function TutorDashboardPage() {
           </section>
         )}
         
-        {!upcomingSessions.length && !pendingRequests.length && (
+        {!isLoading && upcomingSessions.length === 0 && pendingRequests.length === 0 && (
             <Card className="text-center py-12">
               <CardContent>
                 <Image src="https://placehold.co/300x200.png" alt="No sessions" width={300} height={200} className="mx-auto mb-6 rounded-md" data-ai-hint="calendar empty"/>
