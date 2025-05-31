@@ -1,4 +1,5 @@
-"use client"; // This page will involve client-side filtering or fetching based on search params
+
+"use client"; 
 
 import AppLayout from '@/components/layout/AppLayout';
 import TutorList from '@/components/tutoring/TutorList';
@@ -6,87 +7,85 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import type { TutorUser } from '@/lib/types';
-import { Search, Filter } from 'lucide-react';
+import { Search, Filter, Loader2 } from 'lucide-react';
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 
-// Mock data for tutors
-const mockTutors: TutorUser[] = [
-  {
-    id: 'tutor1',
-    name: 'Dr. Elara Vance',
-    email: 'elara.vance@example.com',
-    role: 'tutor',
-    teachableSubjects: ['Mathématiques Avancées', 'Physique Quantique', 'Algorithmique'],
-    experience: 'Professeur universitaire avec 10 ans d\'expérience en tutorat.',
-    availability: 'Mardis et Jeudis soirs',
-    avatarUrl: 'https://placehold.co/150x150.png',
-    bio: 'Passionnée par la transmission du savoir, j\'aide les étudiants à surmonter les défis complexes.',
-  },
-  {
-    id: 'tutor2',
-    name: 'Marcus Chen',
-    email: 'marcus.chen@example.com',
-    role: 'tutor',
-    teachableSubjects: ['Développement Web', 'Bases de Données', 'Python'],
-    experience: 'Développeur Full-Stack Senior, ancien élève ENSA.',
-    availability: 'Weekends, Lundis après-midi',
-    avatarUrl: 'https://placehold.co/150x150.png',
-    bio: 'Je transforme les concepts de code ardus en projets concrets et compréhensibles.',
-  },
-  {
-    id: 'tutor3',
-    name: 'Sofia Benali',
-    email: 'sofia.benali@example.com',
-    role: 'tutor',
-    teachableSubjects: ['Chimie Organique', 'Biologie Moléculaire'],
-    experience: 'Doctorante en chimie, 3 ans de tutorat niveau universitaire.',
-    availability: 'Mercredis et Vendredis toute la journée',
-    avatarUrl: 'https://placehold.co/150x150.png',
-    bio: 'Ma méthode : rendre la science accessible et stimulante.',
-  },
-   {
-    id: 'tutor4',
-    name: 'Ahmed Al Fassi',
-    email: 'ahmed.alfassi@example.com',
-    role: 'tutor',
-    teachableSubjects: ['Algorithmique', 'Structures de Données', 'Java'],
-    experience: 'Ingénieur logiciel chez TechCorp, 5 ans d\'expérience.',
-    availability: 'Soirées en semaine',
-    avatarUrl: 'https://placehold.co/150x150.png',
-    bio: 'Je me concentre sur la résolution de problèmes et la logique algorithmique.',
-  },
-];
+// Mock data for tutors - will be replaced by API call
+// const mockTutors: TutorUser[] = [ ... ]; // Kept for reference, but not used directly
 
 function FindTutorPageContent() {
   const searchParams = useSearchParams();
-  const initialSubject = searchParams.get('subject') || '';
-  const initialLevel = searchParams.get('level') || '';
+  const initialSubjectQuery = searchParams.get('subject') || '';
+  // Level from query params might be used if tutors had specific levels they teach at,
+  // for now, it's mostly for pre-filling if coming from a request.
+  // const initialLevelQuery = searchParams.get('level') || '';
 
-  const [searchTerm, setSearchTerm] = useState(initialSubject);
-  const [subjectFilter, setSubjectFilter] = useState(initialSubject);
-  const [levelFilter, setLevelFilter] = useState(initialLevel);
-  const [filteredTutors, setFilteredTutors] = useState<TutorUser[]>(mockTutors);
+
+  const [allTutors, setAllTutors] = useState<TutorUser[]>([]);
+  const [filteredTutors, setFilteredTutors] = useState<TutorUser[]>([]);
+  const [searchTerm, setSearchTerm] = useState(initialSubjectQuery); // Used for direct text input search
+  const [subjectFilter, setSubjectFilter] = useState(initialSubjectQuery); // Used for dropdown subject filter
+  // const [levelFilter, setLevelFilter] = useState(initialLevelQuery); // Level filter (currently unused for filtering tutors themselves)
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    async function fetchTutors() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/tutors');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch tutors: ${response.statusText}`);
+        }
+        const data: TutorUser[] = await response.json();
+        setAllTutors(data);
+        setFilteredTutors(data); // Initially show all tutors
+      } catch (err) {
+        console.error(err);
+        setError((err as Error).message || 'An unknown error occurred.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchTutors();
+  }, []);
 
   useEffect(() => {
-    let tutors = mockTutors;
-    if (subjectFilter) {
-      tutors = tutors.filter(tutor =>
-        tutor.teachableSubjects.some(s => s.toLowerCase().includes(subjectFilter.toLowerCase())) ||
-        tutor.name.toLowerCase().includes(subjectFilter.toLowerCase())
-      );
+    let tutorsToFilter = [...allTutors];
+    
+    // Combined filter: searchTerm for name/subject, subjectFilter for specific subject dropdown
+    const term = searchTerm.toLowerCase();
+    const specificSubject = subjectFilter.toLowerCase();
+
+    if (term || specificSubject) {
+        tutorsToFilter = tutorsToFilter.filter(tutor => {
+            const nameMatch = tutor.name.toLowerCase().includes(term);
+            const generalSubjectMatch = tutor.teachableSubjects.some(s => s.toLowerCase().includes(term));
+            const specificSubjectDropdownMatch = specificSubject ? tutor.teachableSubjects.some(s => s.toLowerCase() === specificSubject) : true;
+            
+            return (nameMatch || generalSubjectMatch) && specificSubjectDropdownMatch;
+        });
     }
-    // Add level filtering if needed - current mock data doesn't have tutor levels
-    // if (levelFilter) { ... }
-    setFilteredTutors(tutors);
-  }, [subjectFilter, levelFilter]);
+    
+    // Add level filtering if tutor data included levels they teach at.
+    // For example: if (levelFilter) { tutors = tutors.filter(tutor => tutor.levels.includes(levelFilter)); }
+    
+    setFilteredTutors(tutorsToFilter);
+  }, [searchTerm, subjectFilter, allTutors]);
   
   const handleSearch = () => {
-    setSubjectFilter(searchTerm);
+    // The useEffect for filtering already handles this when searchTerm or subjectFilter changes.
+    // This function can remain if explicit button click is desired for other actions in future.
+    // For now, it primarily sets the subjectFilter if the dropdown search term is different.
+    setSubjectFilter(searchTerm); // This might be redundant if using the dropdown correctly
   }
 
-  const allSubjects = Array.from(new Set(mockTutors.flatMap(t => t.teachableSubjects))).sort();
+  const allSubjectsList = Array.from(new Set(allTutors.flatMap(t => t.teachableSubjects))).sort();
 
 
   return (
@@ -119,29 +118,7 @@ function FindTutorPageContent() {
                   className="w-full"
                 />
               </div>
-              {/* 
-              // Removed level filter as it's less relevant for initial tutor search without defined tutor levels
-              // One might filter by subjects typically taught at a certain level if data supported it.
               <div>
-                <label htmlFor="level" className="block text-sm font-medium text-foreground mb-1">Niveau</label>
-                <Select value={levelFilter} onValueChange={setLevelFilter}>
-                  <SelectTrigger id="level" className="w-full">
-                    <SelectValue placeholder="Tous les niveaux" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Tous les niveaux</SelectItem>
-                    <SelectItem value="Débutant">Débutant</SelectItem>
-                    <SelectItem value="Intermédiaire">Intermédiaire</SelectItem>
-                    <SelectItem value="Avancé">Avancé</SelectItem>
-                    <SelectItem value="1ère année">1ère année</SelectItem>
-                     <SelectItem value="2ème année">2ème année</SelectItem>
-                    <SelectItem value="3ème année">3ème année</SelectItem>
-                    <SelectItem value="Master">Master</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              */}
-               <div>
                 <label htmlFor="subject" className="block text-sm font-medium text-foreground mb-1">Matière spécifique</label>
                 <Select value={subjectFilter} onValueChange={setSubjectFilter}>
                   <SelectTrigger id="subject" className="w-full">
@@ -149,7 +126,7 @@ function FindTutorPageContent() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Toutes les matières</SelectItem>
-                    {allSubjects.map(subject => (
+                    {allSubjectsList.map(subject => (
                         <SelectItem key={subject} value={subject}>{subject}</SelectItem>
                     ))}
                   </SelectContent>
@@ -162,15 +139,26 @@ function FindTutorPageContent() {
           </CardContent>
         </Card>
         
-        {filteredTutors.length > 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center items-center py-10">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4 text-lg text-muted-foreground">Chargement des tuteurs...</p>
+          </div>
+        ) : error ? (
+          <Alert variant="destructive" className="max-w-lg mx-auto">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Erreur de chargement</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : filteredTutors.length > 0 ? (
            <TutorList tutors={filteredTutors} />
         ) : (
           <div className="text-center py-10">
             <Search className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-xl font-semibold text-foreground mb-2">Aucun tuteur trouvé</h3>
             <p className="text-muted-foreground">Essayez d'ajuster vos filtres de recherche ou explorez tous nos tuteurs.</p>
-            { (subjectFilter || levelFilter) && 
-                <Button variant="outline" className="mt-4" onClick={() => {setSearchTerm(''); setSubjectFilter(''); setLevelFilter('');}}>
+            { (searchTerm || subjectFilter) && 
+                <Button variant="outline" className="mt-4" onClick={() => {setSearchTerm(''); setSubjectFilter('');}}>
                     Réinitialiser les filtres
                 </Button>
             }
@@ -184,9 +172,16 @@ function FindTutorPageContent() {
 
 export default function FindTutorPage() {
   return (
-    <Suspense fallback={<div>Chargement des tuteurs...</div>}>
+    // Suspense boundary for Next.js navigation related data fetching (useSearchParams)
+    <Suspense fallback={
+        <AppLayout>
+            <div className="flex justify-center items-center min-h-[60vh]">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                <p className="ml-4 text-lg text-muted-foreground">Chargement...</p>
+            </div>
+        </AppLayout>
+    }>
       <FindTutorPageContent />
     </Suspense>
   )
 }
-
