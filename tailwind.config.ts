@@ -8,10 +8,17 @@ export default {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
+    container: {
+      center: true,
+      padding: "2rem",
+      screens: {
+        "2xl": "1400px",
+      },
+    },
     extend: {
       fontFamily: {
         body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
+        headline: ['Space Grotesk', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {
@@ -55,6 +62,13 @@ export default {
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))',
         },
+        // ENSA Connect specific colors for easier access if needed
+        'ensa-soft-blue': 'hsl(var(--ensa-soft-blue))',
+        'ensa-soft-blue-foreground': 'hsl(var(--ensa-soft-blue-foreground))',
+        'ensa-teal': 'hsl(var(--ensa-teal))',
+        'ensa-teal-foreground': 'hsl(var(--ensa-teal-foreground))',
+        'ensa-light-gray': 'hsl(var(--ensa-light-gray))',
+        'ensa-dark-gray': 'hsl(var(--ensa-dark-gray))',
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',
